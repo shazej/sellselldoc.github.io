@@ -1,0 +1,134 @@
+Good call. Don’t touch registration yet.
+
+First freeze the current working server state, then compare:
+	•	server repo
+	•	GitHub remote
+	•	your Mac local repo
+
+Do it in this order.
+
+1) On the server: capture exactly what is running
+
+Run on the Ubuntu server:
+
+cd /opt/monetchat/app
+echo "BRANCH:" && git branch --show-current
+echo "COMMIT:" && git rev-parse HEAD
+echo "REMOTE:" && git remote -v
+echo "STATUS:" && git status --short
+
+Then check diff against HEAD:
+
+cd /opt/monetchat/app
+git diff --stat
+
+Then check if .env or secrets are tracked:
+
+cd /opt/monetchat/app
+git status --short
+git ls-files .env env 2>/dev/null
+
+2) On the server: create a clean branch for the running server state
+
+Since this server state is the one that works, preserve it first.
+
+cd /opt/monetchat/app
+git checkout -B server
+
+Now stage everything except secrets:
+
+cd /opt/monetchat/app
+git add -A
+git restore --staged .env env 2>/dev/null || true
+git status --short
+
+If you see .env or env still staged somehow, unstage them before commit.
+
+Then commit:
+
+cd /opt/monetchat/app
+git commit -m "Server working state: deploy fixes, Prisma workaround, Ollama integration"
+
+If it says nothing to commit, that is okay. It means server files already match git.
+
+3) On the server: compare with remote before push
+
+cd /opt/monetchat/app
+git fetch origin
+echo "LOCAL server branch:"
+git rev-parse HEAD
+echo "REMOTE server branch:"
+git rev-parse origin/server 2>/dev/null || echo "origin/server does not exist"
+echo "COMMITS only on local:"
+git log --oneline origin/server..HEAD 2>/dev/null || true
+echo "COMMITS only on remote:"
+git log --oneline HEAD..origin/server 2>/dev/null || true
+
+If you want to overwrite any existing remote server branch with this working state, do:
+
+cd /opt/monetchat/app
+git push -u origin server --force
+
+That makes GitHub’s server branch match the actual working server.
+
+4) On your Mac: cross-check local vs remote before pulling
+
+In your local repo on Mac:
+
+cd /path/to/your/local/monetchat
+git remote -v
+git fetch origin
+git branch --show-current
+git status --short
+
+Then compare local branch with remote branches:
+
+cd /path/to/your/local/monetchat
+echo "LOCAL HEAD:" && git rev-parse HEAD
+echo "REMOTE server:" && git rev-parse origin/server
+echo "REMOTE main/current branch:" && git rev-parse origin/$(git branch --show-current 2>/dev/null) 2>/dev/null || true
+
+See what differs:
+
+cd /path/to/your/local/monetchat
+git log --oneline HEAD..origin/server
+git log --oneline origin/server..HEAD
+
+5) On your Mac: pull the exact working server state safely
+
+If you want your laptop to match the server exactly:
+
+cd /path/to/your/local/monetchat
+git checkout -B server origin/server
+
+If you already have uncommitted local work, stash first:
+
+cd /path/to/your/local/monetchat
+git stash push -u -m "before-sync-with-server"
+git checkout -B server origin/server
+
+6) Final verification on Mac
+
+cd /path/to/your/local/monetchat
+git branch --show-current
+git rev-parse HEAD
+git status --short
+
+That should now match origin/server.
+
+What I recommend
+
+Do these three checkpoints and send me the outputs:
+	1.	Server
+
+cd /opt/monetchat/app && git branch --show-current && git rev-parse HEAD && git status --short
+
+	2.	Server vs remote
+
+cd /opt/monetchat/app && git fetch origin && git log --oneline origin/server..HEAD 2>/dev/null && echo "----" && git log --oneline HEAD..origin/server 2>/dev/null
+
+	3.	Mac local
+
+cd /path/to/your/local/monetchat && git branch --show-current && git rev-parse HEAD && git fetch origin && git rev-parse origin/server && git status --short
+
+Once we compare those three, we can sync your laptop without risking the working server state.
